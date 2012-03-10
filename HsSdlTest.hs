@@ -12,8 +12,8 @@ import Control.Monad.State (evalStateT, StateT, get, put, MonadState, modify)
 
 import Foreign.C
 import Foreign (Word32)
-import Graphics.UI.SDL as SDL
-import Graphics.UI.SDL.Image as SDLi
+import qualified Graphics.UI.SDL as SDL
+import qualified Graphics.UI.SDL.Image as SDLi
 
 
 backgroundImg = "background.bmp"
@@ -84,7 +84,7 @@ initGame = do
   tiles <- loadTileMap "sprites.png" 64 64
   guyTile <- return $ Tile tiles 0 0
   screen <- SDL.getVideoSurface
-  curTick <- getTicks
+  curTick <- SDL.getTicks
   return (GameEnv screen back guyTile, GameState False (curTick + tick) 0 (Co2 0 0))
 
 drawScreen :: GameEnvM ()
@@ -110,7 +110,7 @@ waitATick = do
       when (now < ticks) $ do
         w <- return (ticks - now)
         --putStrLn ("Waiting " ++ (show w))
-        delay w
+        SDL.delay w
 
 loop :: GameEnvM ()
 loop = do
@@ -126,7 +126,7 @@ loop = do
     False -> loop
 
 foreign export ccall my_main :: IO ()
-my_main = SDL.withInit [InitEverything] $ do
+my_main = SDL.withInit [SDL.InitEverything] $ do
   (gameEnv, gameState) <- initGame
   runLoop gameEnv gameState
 
@@ -134,13 +134,13 @@ handleEvents :: GameEnvM ()
 handleEvents = do
   event <- liftIO SDL.pollEvent
   case event of
-    Quit -> do
+    SDL.Quit -> do
       putShouldQuit True
       handleEvents
-    (KeyUp _) -> do
+    (SDL.KeyUp _) -> do
       putShouldQuit True
       handleEvents
-    NoEvent -> return ()
+    SDL.NoEvent -> return ()
     _ -> handleEvents
 
 updateGame :: GameEnvM ()
@@ -176,7 +176,7 @@ tileRect tile =
   let tm = tileMap tile
       tw = tileWidth tm
       th = tileHeight tm
-  in Rect ((col tile) * tw) ((row tile) * th) tw th
+  in SDL.Rect ((col tile) * tw) ((row tile) * th) tw th
 
 blitTile :: Tile -> SDL.Surface -> Int -> Int -> IO Bool
 blitTile tile destSurf x y =
@@ -184,5 +184,5 @@ blitTile tile destSurf x y =
       tileMRect = Just $ tileRect tile
       tw = tileWidth $ tileMap tile
       th = tileHeight $ tileMap tile
-      destMRect = Just $ Rect x y tw th
-  in blitSurface tileSurf tileMRect destSurf destMRect
+      destMRect = Just $ SDL.Rect x y tw th
+  in SDL.blitSurface tileSurf tileMRect destSurf destMRect
