@@ -1,0 +1,16 @@
+Name:HsSdlTest
+Version:0.1
+Cabal-Version: >= 1.2
+License:MIT
+Author:Mike Verdone
+Homepage:
+Category:
+Synopsis:A Haskell SDL example that builds and runs on OS X
+Build-Type: Simple
+
+Executable sdltest
+  Main-Is: HsSdlTest.hs
+  pkgconfig-depends: sdl
+  Ghc-options: -no-hs-main c_main.c
+  Build-Depends: base >= 4
+               , SDL
