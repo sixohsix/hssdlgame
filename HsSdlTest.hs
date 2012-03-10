@@ -10,13 +10,14 @@ import Control.Monad.Trans (liftIO)
 import Control.Monad.Reader (runReaderT, ReaderT, ask, MonadReader)
 import Control.Monad.State (evalStateT, StateT, get, put, MonadState, modify)
 
-import Foreign.C
 import Foreign (Word32)
 import qualified Graphics.UI.SDL as SDL
 import qualified Graphics.UI.SDL.Image as SDLi
 
 
-backgroundImg = "background.bmp"
+backgroundImg = "resources/background.bmp"
+textImg = "resources/text.png"
+spritesImg = "resources/sprites.png"
 tick = 30
 
 data Co2 = Co2 {
@@ -81,7 +82,7 @@ initGame = do
   SDL.setVideoMode 640 480 32 []
   SDL.setCaption "hello world!" []
   back <- SDL.loadBMP backgroundImg
-  tiles <- loadTileMap "sprites.png" 64 64
+  tiles <- loadTileMap spritesImg 64 64
   guyTile <- return $ Tile tiles 0 0
   screen <- SDL.getVideoSurface
   curTick <- SDL.getTicks
@@ -101,11 +102,11 @@ drawScreen = do
 waitATick :: GameEnvM ()
 waitATick = do
   nextTick <- getNextTick
-  liftIO $ waitUntil nextTick
+  waitUntil nextTick
   putNextTick $ nextTick + tick
   where
-    waitUntil :: Word32 -> IO ()
-    waitUntil ticks = do
+    waitUntil :: Word32 -> GameEnvM ()
+    waitUntil ticks = liftIO $ do
       now <- SDL.getTicks
       when (now < ticks) $ do
         w <- return (ticks - now)
@@ -186,3 +187,11 @@ blitTile tile destSurf x y =
       th = tileHeight $ tileMap tile
       destMRect = Just $ SDL.Rect x y tw th
   in SDL.blitSurface tileSurf tileMRect destSurf destMRect
+
+loadTileMapMap :: Eq k => String -> Int -> Int -> [(k, (Int, Int))] -> IO [(k, Tile)]
+loadTileMapMap tileFile tw th tileSpecs = do
+  tmap <- loadTileMap tileFile tw th
+  return $ map (\(key, (r, c)) -> (key, Tile tmap r c)) tileSpecs
+
+text = loadTileMapMap textImg 16 32
+         ([(' ', (0, 0))] ++ map (\v -> (show v !! 0, (0, v + 1))) [0..9])
