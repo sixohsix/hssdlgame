@@ -4,8 +4,9 @@
 module HsSdlTest where
 
 import Control.Monad (when, liftM)
+import Control.Monad.Trans (liftIO)
 import Control.Monad.Reader (runReaderT, ReaderT, ask, MonadReader)
-import Control.Monad.State (evalStateT, StateT, get, put)
+import Control.Monad.State (evalStateT, StateT, get, put, MonadState, modify)
 
 import Foreign.C
 import Foreign (Word32)
@@ -29,6 +30,7 @@ data GameEnv = GameEnv {
 
 data GameState = GameState {
   shouldQuit :: Bool,
+  nextTick :: Word32,
   guyLocation :: Co2
   }
 
@@ -41,8 +43,20 @@ getScreen = liftM screen ask
 getGuyTile :: MonadReader GameEnv m => m Tile
 getGuyTile = liftM guyTile ask
 
---runLoop :: GameEnv -> GameState -> IO ()
---runLoop = evalStateT . runReaderT loop
+getNextTick :: MonadState GameState m => m Word32
+getNextTick = liftM nextTick get
+
+setNextTick :: MonadState GameState m => Word32 -> m ()
+setNextTick t = modify $ \s -> s { nextTick = t }
+
+getShouldQuit :: MonadState GameState m => m Bool
+getShouldQuit = liftM shouldQuit get
+
+setShouldQuit :: MonadState GameState m => Bool -> m ()
+setShouldQuit sq = modify $ \s -> s { shouldQuit = sq }
+
+runLoop :: GameEnv -> GameState -> IO ()
+runLoop = evalStateT . runReaderT loop
 
 initGame :: IO (GameEnv, GameState)
 initGame = do
@@ -52,9 +66,34 @@ initGame = do
   tiles <- loadTileMap "sprites.png" 64 64
   guyTile <- return $ Tile tiles 0 0
   screen <- SDL.getVideoSurface
-  return (GameEnv screen back guyTile, GameState False $ Co2 0 0)
+  curTick <- getTicks
+  return (GameEnv screen back guyTile, GameState False (curTick + tick) (Co2 0 0))
 
---loop :: GameEnvM ()
+drawScreen :: GameEnvM ()
+drawScreen = do
+  screen <- getScreen
+  guyTile <- getGuyTile
+  liftIO $ do
+    blitTile guyTile screen 64 64
+    SDL.flip screen
+
+waitATick :: GameEnvM ()
+waitATick = do
+  nextTick <- getNextTick
+  liftIO $ waitUntil nextTick
+  setNextTick $ nextTick + tick
+
+loop :: GameEnvM ()
+loop = do
+  handleEvents
+  updateGame
+  drawScreen
+  waitATick
+
+  shouldQuit <- getShouldQuit
+  case shouldQuit of
+    True -> return ()
+    False -> loop
 
 foreign export ccall my_main :: IO ()
 
@@ -62,18 +101,22 @@ my_main :: IO ()
 my_main = SDL.withInit [InitEverything] $ do
   (gameEnv, gameState) <- initGame
   blitSurface (back gameEnv) Nothing (screen gameEnv) Nothing
-  --blitTile guyTile screen 64 64
-  SDL.flip (screen gameEnv)
-  eventLoop 0
+  runLoop gameEnv gameState
 
-eventLoop :: Word32 -> IO ()
-eventLoop nextTick = SDL.pollEvent >>= checkEvent
-  where checkEvent (KeyUp _) = return ()
-        checkEvent _ = do updateGame
-                          waitUntil nextTick
-                          eventLoop $ nextTick + tick
+handleEvents :: GameEnvM ()
+handleEvents = do
+  event <- liftIO SDL.pollEvent
+  case event of
+    Quit -> do
+      setShouldQuit True
+      handleEvents
+    (KeyUp _) -> do
+      setShouldQuit True
+      handleEvents
+    NoEvent -> return ()
+    _ -> handleEvents
 
-updateGame :: IO ()
+updateGame :: GameEnvM ()
 updateGame = return ()
 
 waitUntil :: Word32 -> IO ()
@@ -81,7 +124,7 @@ waitUntil ticks = do
   now <- getTicks
   when (now < ticks) $ do
     w <- return (ticks - now)
-    putStrLn ("Waiting " ++ (show w))
+    --putStrLn ("Waiting " ++ (show w))
     delay w
 
 
