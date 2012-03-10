@@ -2,16 +2,16 @@
 
 module HsSdlTest where
 
+import Control.Monad (when)
+
 import Foreign.C
 import Foreign
 import Graphics.UI.SDL as SDL
 import Graphics.UI.SDL.Image as SDLi
 
---import Prelude (printLn)
-
 
 background = "background.bmp"
-tick = 100
+tick = 30
 
 
 foreign export ccall my_main :: IO ()
@@ -26,22 +26,25 @@ my_main = SDL.withInit [InitEverything] $ do
   blitSurface back Nothing screen Nothing
   blitTile guyTile screen 64 64
   SDL.flip screen
-  now <- getTicks
-  eventLoop $ now + tick
+  eventLoop 0
 
-eventLoop nextTick = SDL.waitEvent >>= checkEvent
+eventLoop :: Word32 -> IO ()
+eventLoop nextTick = SDL.pollEvent >>= checkEvent
   where checkEvent (KeyUp _) = return ()
         checkEvent _ = do updateGame
                           waitUntil nextTick
                           eventLoop $ nextTick + tick
 
+updateGame :: IO ()
 updateGame = return ()
 
+waitUntil :: Word32 -> IO ()
 waitUntil ticks = do
   now <- getTicks
-  wait <- return $ ticks - now
-  putStrLn ("Waiting " ++ (show wait))
-  delay wait
+  when (now < ticks) $ do
+    w <- return (ticks - now)
+    putStrLn ("Waiting " ++ (show w))
+    delay w
 
 
 data TileMap = TileMap {
