@@ -3,6 +3,8 @@
 
 module HsSdlTest where
 
+import System.Random (randomIO)
+
 import Control.Monad (when, liftM)
 import Control.Monad.Trans (liftIO)
 import Control.Monad.Reader (runReaderT, ReaderT, ask, MonadReader)
@@ -14,7 +16,7 @@ import Graphics.UI.SDL as SDL
 import Graphics.UI.SDL.Image as SDLi
 
 
-background = "background.bmp"
+backgroundImg = "background.bmp"
 tick = 30
 
 data Co2 = Co2 {
@@ -23,22 +25,26 @@ data Co2 = Co2 {
   }
 
 data GameEnv = GameEnv {
-  screen :: Surface,
-  back :: Surface,
+  screen :: SDL.Surface,
+  background :: SDL.Surface,
   guyTile :: Tile
   }
 
 data GameState = GameState {
   shouldQuit :: Bool,
   nextTick :: Word32,
+  frameCount :: Int,
   guyLocation :: Co2
   }
 
 type GameStateM = StateT GameState IO
 type GameEnvM = ReaderT GameEnv GameStateM
 
-getScreen :: MonadReader GameEnv m => m Surface
+getScreen :: MonadReader GameEnv m => m SDL.Surface
 getScreen = liftM screen ask
+
+getBackground :: MonadReader GameEnv m => m SDL.Surface
+getBackground = liftM background ask
 
 getGuyTile :: MonadReader GameEnv m => m Tile
 getGuyTile = liftM guyTile ask
@@ -46,14 +52,26 @@ getGuyTile = liftM guyTile ask
 getNextTick :: MonadState GameState m => m Word32
 getNextTick = liftM nextTick get
 
-setNextTick :: MonadState GameState m => Word32 -> m ()
-setNextTick t = modify $ \s -> s { nextTick = t }
+putNextTick :: MonadState GameState m => Word32 -> m ()
+putNextTick t = modify $ \s -> s { nextTick = t }
+
+getFrameCount :: MonadState GameState m => m Int
+getFrameCount = liftM frameCount get
+
+incrementFrameCount :: MonadState GameState m => m ()
+incrementFrameCount = modify $ \s -> s { frameCount = (frameCount s) + 1 }
 
 getShouldQuit :: MonadState GameState m => m Bool
 getShouldQuit = liftM shouldQuit get
 
-setShouldQuit :: MonadState GameState m => Bool -> m ()
-setShouldQuit sq = modify $ \s -> s { shouldQuit = sq }
+putShouldQuit :: MonadState GameState m => Bool -> m ()
+putShouldQuit sq = modify $ \s -> s { shouldQuit = sq }
+
+getGuyLocation :: MonadState GameState m => m Co2
+getGuyLocation = liftM guyLocation get
+
+putGuyLocation :: MonadState GameState m => Co2 -> m ()
+putGuyLocation guyLoc = modify $ \s -> s { guyLocation = guyLoc }
 
 runLoop :: GameEnv -> GameState -> IO ()
 runLoop = evalStateT . runReaderT loop
@@ -62,32 +80,44 @@ initGame :: IO (GameEnv, GameState)
 initGame = do
   SDL.setVideoMode 640 480 32 []
   SDL.setCaption "hello world!" []
-  back <- SDL.loadBMP background
+  back <- SDL.loadBMP backgroundImg
   tiles <- loadTileMap "sprites.png" 64 64
   guyTile <- return $ Tile tiles 0 0
   screen <- SDL.getVideoSurface
   curTick <- getTicks
-  return (GameEnv screen back guyTile, GameState False (curTick + tick) (Co2 0 0))
+  return (GameEnv screen back guyTile, GameState False (curTick + tick) 0 (Co2 0 0))
 
 drawScreen :: GameEnvM ()
 drawScreen = do
   screen <- getScreen
+  back <- getBackground
   guyTile <- getGuyTile
+  guyLoc <- getGuyLocation
   liftIO $ do
-    blitTile guyTile screen 64 64
+    SDL.blitSurface back Nothing screen Nothing
+    blitTile guyTile screen (x guyLoc) (y guyLoc)
     SDL.flip screen
 
 waitATick :: GameEnvM ()
 waitATick = do
   nextTick <- getNextTick
   liftIO $ waitUntil nextTick
-  setNextTick $ nextTick + tick
+  putNextTick $ nextTick + tick
+  where
+    waitUntil :: Word32 -> IO ()
+    waitUntil ticks = do
+      now <- SDL.getTicks
+      when (now < ticks) $ do
+        w <- return (ticks - now)
+        --putStrLn ("Waiting " ++ (show w))
+        delay w
 
 loop :: GameEnvM ()
 loop = do
   handleEvents
   updateGame
   drawScreen
+  incrementFrameCount
   waitATick
 
   shouldQuit <- getShouldQuit
@@ -96,11 +126,8 @@ loop = do
     False -> loop
 
 foreign export ccall my_main :: IO ()
-
-my_main :: IO ()
 my_main = SDL.withInit [InitEverything] $ do
   (gameEnv, gameState) <- initGame
-  blitSurface (back gameEnv) Nothing (screen gameEnv) Nothing
   runLoop gameEnv gameState
 
 handleEvents :: GameEnvM ()
@@ -108,25 +135,26 @@ handleEvents = do
   event <- liftIO SDL.pollEvent
   case event of
     Quit -> do
-      setShouldQuit True
+      putShouldQuit True
       handleEvents
     (KeyUp _) -> do
-      setShouldQuit True
+      putShouldQuit True
       handleEvents
     NoEvent -> return ()
     _ -> handleEvents
 
 updateGame :: GameEnvM ()
-updateGame = return ()
-
-waitUntil :: Word32 -> IO ()
-waitUntil ticks = do
-  now <- getTicks
-  when (now < ticks) $ do
-    w <- return (ticks - now)
-    --putStrLn ("Waiting " ++ (show w))
-    delay w
-
+updateGame = do
+  frameCount <- getFrameCount
+  when (0 == (mod frameCount 30)) $ let
+    randomWithin :: Int -> GameEnvM Int
+    randomWithin maxV = do
+      r <- liftIO randomIO
+      return $ mod r maxV
+    in do
+      rX <- randomWithin 640
+      rY <- randomWithin 480
+      putGuyLocation $ Co2 rX rY
 
 data TileMap = TileMap {
   surface :: SDL.Surface,
