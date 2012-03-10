@@ -1,11 +1,14 @@
 {-# LANGUAGE ForeignFunctionInterface #-}
+{-# OPTIONS_GHC -XFlexibleContexts #-}
 
 module HsSdlTest where
 
-import Control.Monad (when)
+import Control.Monad (when, liftM)
+import Control.Monad.Reader (runReaderT, ReaderT, ask, MonadReader)
+import Control.Monad.State (evalStateT, StateT, get, put)
 
 import Foreign.C
-import Foreign
+import Foreign (Word32)
 import Graphics.UI.SDL as SDL
 import Graphics.UI.SDL.Image as SDLi
 
@@ -13,19 +16,54 @@ import Graphics.UI.SDL.Image as SDLi
 background = "background.bmp"
 tick = 30
 
+data Co2 = Co2 {
+  x :: Int,
+  y :: Int
+  }
 
-foreign export ccall my_main :: IO ()
+data GameEnv = GameEnv {
+  screen :: Surface,
+  back :: Surface,
+  guyTile :: Tile
+  }
 
-my_main = SDL.withInit [InitEverything] $ do
+data GameState = GameState {
+  shouldQuit :: Bool,
+  guyLocation :: Co2
+  }
+
+type GameStateM = StateT GameState IO
+type GameEnvM = ReaderT GameEnv GameStateM
+
+getScreen :: MonadReader GameEnv m => m Surface
+getScreen = liftM screen ask
+
+getGuyTile :: MonadReader GameEnv m => m Tile
+getGuyTile = liftM guyTile ask
+
+--runLoop :: GameEnv -> GameState -> IO ()
+--runLoop = evalStateT . runReaderT loop
+
+initGame :: IO (GameEnv, GameState)
+initGame = do
   SDL.setVideoMode 640 480 32 []
-  SDL.setCaption "hello world!" "hello world"
+  SDL.setCaption "hello world!" []
   back <- SDL.loadBMP background
   tiles <- loadTileMap "sprites.png" 64 64
   guyTile <- return $ Tile tiles 0 0
   screen <- SDL.getVideoSurface
-  blitSurface back Nothing screen Nothing
-  blitTile guyTile screen 64 64
-  SDL.flip screen
+  return (GameEnv screen back guyTile, GameState False $ Co2 0 0)
+
+--loop :: GameEnvM ()
+
+foreign export ccall my_main :: IO ()
+
+my_main :: IO ()
+my_main = SDL.withInit [InitEverything] $ do
+  (gameEnv, gameState) <- initGame
+  blitSurface (back gameEnv) Nothing (screen gameEnv) Nothing
+  --blitTile guyTile screen 64 64
+  SDL.flip (screen gameEnv)
   eventLoop 0
 
 eventLoop :: Word32 -> IO ()

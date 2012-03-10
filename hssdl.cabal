@@ -13,5 +13,6 @@ Executable sdltest
   pkgconfig-depends: sdl
   Ghc-options: -no-hs-main c_main.c
   Build-Depends: base >= 4
+               , mtl >= 2.0
                , SDL >= 0.6
                , SDL-image >= 0.6
