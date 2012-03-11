@@ -9,9 +9,10 @@ Synopsis:A Haskell SDL example that builds and runs on OS X
 Build-Type: Simple
 
 Executable sdltest
+  Hs-Source-Dirs: src
   Main-Is: HsSdlTest.hs
   pkgconfig-depends: sdl
-  Ghc-options: -no-hs-main c_main.c
+  Ghc-options: -no-hs-main src/c_main.c
   Build-Depends: base >= 4
                , random >= 1.0
                , mtl >= 2.0
