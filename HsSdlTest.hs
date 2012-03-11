@@ -28,7 +28,8 @@ data Co2 = Co2 {
 data GameEnv = GameEnv {
   screen :: SDL.Surface,
   background :: SDL.Surface,
-  guyTile :: Tile
+  guyTile :: Tile,
+  textTiles :: [(Char, Tile)]
   }
 
 data GameState = GameState {
@@ -84,9 +85,22 @@ initGame = do
   back <- SDL.loadBMP backgroundImg
   tiles <- loadTileMap spritesImg 64 64
   guyTile <- return $ Tile tiles 0 0
+  textTiles <- loadTextTiles
   screen <- SDL.getVideoSurface
   curTick <- SDL.getTicks
-  return (GameEnv screen back guyTile, GameState False (curTick + tick) 0 (Co2 0 0))
+  return (GameEnv {
+             screen = screen,
+             background = back,
+             guyTile = guyTile,
+             textTiles = textTiles
+             },
+          GameState {
+            shouldQuit = False,
+            nextTick = (curTick + tick),
+            frameCount = 0,
+            guyLocation = Co2 0 0
+            }
+         )
 
 drawScreen :: GameEnvM ()
 drawScreen = do
@@ -193,5 +207,15 @@ loadTileMapMap tileFile tw th tileSpecs = do
   tmap <- loadTileMap tileFile tw th
   return $ map (\(key, (r, c)) -> (key, Tile tmap r c)) tileSpecs
 
-text = loadTileMapMap textImg 16 32
-         ([(' ', (0, 0))] ++ map (\v -> (show v !! 0, (0, v + 1))) [0..9])
+loadTextTiles =
+  loadTileMapMap textImg 16 32
+    ([(' ', (0, 0))] ++ map (\v -> (show v !! 0, (0, v + 1))) [0..9])
+
+drawTileLookup :: Eq k => [(k, Tile)] -> SDL.Surface -> [k] -> Co2 -> IO ()
+drawTileLookup tileSet surf str (Co2 x y) = do
+  mapM drawOne (zip str [0..])
+  return ()
+  where drawOne (c, i) =
+          let Just tile = lookup c tileSet
+              tw = tileWidth $ tileMap tile
+          in blitTile tile surf (x + (i * tw)) y
