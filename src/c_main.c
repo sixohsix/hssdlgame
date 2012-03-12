@@ -9,7 +9,7 @@
 extern void __stginit_HsSdlTest ( void );
 #endif
 
-int SDL_main(int argc, char *argv[])
+int main(int argc, char *argv[])
 {
   int i;
 
