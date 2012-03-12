@@ -112,6 +112,20 @@ guy tile randomGen loc = Entity nextState isAlive blit where
     T.blitTile tile surf (x loc) (y loc)
     return ()
 
+makeScore :: GameEnvM Entity
+makeScore = do
+  t <- eGet textTiles
+  let blitText = T.drawTileLookup t
+    in return $ score blitText 0
+
+score :: (SDL.Surface -> String -> Co2 -> IO ()) -> Int -> Entity
+score blitText s = Entity nextState isAlive blit where
+  unchanged = score blitText s
+  nextState = \state -> score blitText (s + 1)
+  isAlive = True
+  blit = \surf -> blitText surf (show s) (Co2 45 60)
+
+
 initGame :: IO (GameEnv, GameState)
 initGame = do
   SDL.setVideoMode 640 480 32 []
@@ -150,7 +164,6 @@ drawScreen = do
   fc <- sGet frameCount
   liftIO $ SDL.blitSurface back Nothing screen Nothing
   drawEntities
-  blitText (show fc) (Co2 45 60)
   liftIO $ SDL.flip screen
 
 drawEntities :: GameEnvM ()
@@ -179,7 +192,8 @@ loop = do
   ents <- sGet liveEntities
   when (null ents) $ do
     guy <- makeGuy
-    modify $ \s -> s { liveEntities = [guy] }
+    score <- makeScore
+    modify $ \s -> s { liveEntities = [guy, score] }
   handleEvents
   updateGame
   drawScreen
