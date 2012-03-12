@@ -1,9 +1,11 @@
 {-# LANGUAGE ForeignFunctionInterface #-}
 {-# OPTIONS_GHC -XFlexibleContexts #-}
+{-# OPTIONS_GHC -XMultiParamTypeClasses #-}
+
 
 module HsSdlTest where
 
-import System.Random (randomIO)
+import qualified System.Random as Random
 
 import Control.Monad (when, liftM)
 import Control.Monad.Trans (liftIO)
@@ -35,7 +37,8 @@ data GameState = GameState {
   shouldQuit :: Bool,
   nextTick :: Word32,
   frameCount :: Int,
-  guyLocation :: Co2
+  guyLocation :: Co2,
+  liveEntities :: [Entity]
   }
 
 type GameStateM = StateT GameState IO
@@ -81,6 +84,34 @@ sGet key = liftM key get
 eGet key = liftM key ask
 
 
+data Entity = Entity {
+  nextState :: GameState -> Entity,
+  isAlive :: Bool,
+  blit :: SDL.Surface -> IO ()
+  }
+
+makeGuy :: GameEnvM Entity
+makeGuy = do
+  randomGen <- liftIO $ Random.newStdGen
+  gTile <- eGet guyTile
+  return $ guy gTile randomGen (Co2 40 40)
+
+guy :: T.Tile -> Random.StdGen -> Co2 -> Entity
+guy tile randomGen loc = Entity nextState isAlive blit where
+  unchanged = guy tile randomGen loc
+  nextState = \gameState ->
+    if 0 == (mod (frameCount gameState) 30)
+    then let randomWithin :: Int -> Random.StdGen -> (Int, Random.StdGen)
+             randomWithin maxV = Random.randomR (0, maxV)
+             (rX, g0) = randomWithin 640 randomGen
+             (rY, g1) = randomWithin 480 g0
+         in guy tile g1 (Co2 rX rY)
+    else unchanged
+  isAlive = True
+  blit = \surf -> do
+    T.blitTile tile surf (x loc) (y loc)
+    return ()
+
 initGame :: IO (GameEnv, GameState)
 initGame = do
   SDL.setVideoMode 640 480 32 []
@@ -101,7 +132,8 @@ initGame = do
             shouldQuit = False,
             nextTick = (curTick + tick),
             frameCount = 0,
-            guyLocation = Co2 0 0
+            guyLocation = Co2 0 0,
+            liveEntities = []
             }
          )
 
@@ -115,14 +147,18 @@ drawScreen :: GameEnvM ()
 drawScreen = do
   screen <- getScreen
   back <- getBackground
-  guyTile <- getGuyTile
-  guyLoc <- getGuyLocation
   fc <- sGet frameCount
-  liftIO $ do
-    SDL.blitSurface back Nothing screen Nothing
-    T.blitTile guyTile screen (x guyLoc) (y guyLoc)
+  liftIO $ SDL.blitSurface back Nothing screen Nothing
+  drawEntities
   blitText (show fc) (Co2 45 60)
   liftIO $ SDL.flip screen
+
+drawEntities :: GameEnvM ()
+drawEntities = do
+  screen <- eGet screen
+  ents <- sGet liveEntities
+  liftIO $ mapM (\e -> blit e screen) ents
+  return ()
 
 waitATick :: GameEnvM ()
 waitATick = do
@@ -140,6 +176,10 @@ waitATick = do
 
 loop :: GameEnvM ()
 loop = do
+  ents <- sGet liveEntities
+  when (null ents) $ do
+    guy <- makeGuy
+    modify $ \s -> s { liveEntities = [guy] }
   handleEvents
   updateGame
   drawScreen
@@ -171,13 +211,4 @@ handleEvents = do
 
 updateGame :: GameEnvM ()
 updateGame = do
-  frameCount <- getFrameCount
-  when (0 == (mod frameCount 30)) $ let
-    randomWithin :: Int -> GameEnvM Int
-    randomWithin maxV = do
-      r <- liftIO randomIO
-      return $ mod r maxV
-    in do
-      rX <- randomWithin 640
-      rY <- randomWithin 480
-      putGuyLocation $ Co2 rX rY
+  modify $ \s -> s { liveEntities = map (\e -> nextState e s) (liveEntities s) }
