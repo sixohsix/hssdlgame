@@ -20,75 +20,15 @@ import qualified MGameLib.Tile as T
 import MGameLib.Text (loadTextTiles)
 import MGameLib.Coordinates (Co2 (Co2, x, y))
 
+import TheGame.Monad
+import TheGame.Entity
+
 
 backgroundImg = "resources/background.bmp"
 spritesImg = "resources/sprites.png"
 textImg = "resources/text.png"
 tick = 30
 
-data GameEnv = GameEnv {
-  screen :: SDL.Surface,
-  background :: SDL.Surface,
-  guyTile :: T.Tile,
-  textTiles :: [(Char, T.Tile)]
-  }
-
-data GameState = GameState {
-  shouldQuit :: Bool,
-  nextTick :: Word32,
-  frameCount :: Int,
-  guyLocation :: Co2,
-  liveEntities :: [Entity]
-  }
-
-type GameStateM = StateT GameState IO
-type GameEnvM = ReaderT GameEnv GameStateM
-
-getScreen :: MonadReader GameEnv m => m SDL.Surface
-getScreen = liftM screen ask
-
-getBackground :: MonadReader GameEnv m => m SDL.Surface
-getBackground = liftM background ask
-
-getGuyTile :: MonadReader GameEnv m => m T.Tile
-getGuyTile = liftM guyTile ask
-
-getNextTick :: MonadState GameState m => m Word32
-getNextTick = liftM nextTick get
-
-putNextTick :: MonadState GameState m => Word32 -> m ()
-putNextTick t = modify $ \s -> s { nextTick = t }
-
-getFrameCount :: MonadState GameState m => m Int
-getFrameCount = liftM frameCount get
-
-incrementFrameCount :: MonadState GameState m => m ()
-incrementFrameCount = modify $ \s -> s { frameCount = (frameCount s) + 1 }
-
-getShouldQuit :: MonadState GameState m => m Bool
-getShouldQuit = liftM shouldQuit get
-
-putShouldQuit :: MonadState GameState m => Bool -> m ()
-putShouldQuit sq = modify $ \s -> s { shouldQuit = sq }
-
-getGuyLocation :: MonadState GameState m => m Co2
-getGuyLocation = liftM guyLocation get
-
-putGuyLocation :: MonadState GameState m => Co2 -> m ()
-putGuyLocation guyLoc = modify $ \s -> s { guyLocation = guyLoc }
-
-runLoop :: GameEnv -> GameState -> IO ()
-runLoop = evalStateT . runReaderT loop
-
-sGet key = liftM key get
-eGet key = liftM key ask
-
-
-data Entity = Entity {
-  nextState :: GameState -> Entity,
-  isAlive :: Bool,
-  blit :: SDL.Surface -> IO ()
-  }
 
 makeGuy :: GameEnvM Entity
 makeGuy = do
@@ -151,17 +91,10 @@ initGame = do
             }
          )
 
-blitText :: String -> Co2 -> GameEnvM ()
-blitText msg co2 = do
-  t <- eGet textTiles
-  s <- eGet screen
-  liftIO $ T.drawTileLookup t s msg co2
-
 drawScreen :: GameEnvM ()
 drawScreen = do
   screen <- getScreen
   back <- getBackground
-  fc <- sGet frameCount
   liftIO $ SDL.blitSurface back Nothing screen Nothing
   drawEntities
   liftIO $ SDL.flip screen
@@ -187,6 +120,9 @@ waitATick = do
         --putStrLn ("Waiting " ++ (show w))
         SDL.delay w
 
+runLoop :: GameEnv -> GameState -> IO ()
+runLoop = evalStateT . runReaderT
+
 loop :: GameEnvM ()
 loop = do
   ents <- sGet liveEntities
@@ -208,7 +144,7 @@ loop = do
 foreign export ccall my_main :: IO ()
 my_main = SDL.withInit [SDL.InitEverything] $ do
   (gameEnv, gameState) <- initGame
-  runLoop gameEnv gameState
+  runLoop gameEnv gameState loop
 
 handleEvents :: GameEnvM ()
 handleEvents = do
@@ -216,13 +152,13 @@ handleEvents = do
   case event of
     SDL.Quit -> do
       putShouldQuit True
-      handleEvents
-    (SDL.KeyUp _) -> do
+    SDL.KeyUp _ -> do
       putShouldQuit True
-      handleEvents
+    _ -> return ()
+  case event of
     SDL.NoEvent -> return ()
     _ -> handleEvents
 
 updateGame :: GameEnvM ()
-updateGame = do
+updateGame =
   modify $ \s -> s { liveEntities = map (\e -> nextState e s) (liveEntities s) }
